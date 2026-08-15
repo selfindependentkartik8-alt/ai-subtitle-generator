@@ -1,3 +1,4 @@
+import { get } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ function getLanguageCode(language: string) {
     Urdu: "ur",
   };
 
-  return languages[language];
+  return languages[language] || undefined;
 }
 
 function cleanText(text: string) {
@@ -25,9 +26,9 @@ function cleanText(text: string) {
     .trim();
 }
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
+    const body = await req.json();
 
     const {
       fileUrl,
@@ -53,9 +54,6 @@ export async function POST(request: Request) {
     const apiKey =
       process.env.GROQ_API_KEY;
 
-    const blobToken =
-      process.env.BLOB_READ_WRITE_TOKEN;
-
     if (!apiKey) {
       return NextResponse.json(
         {
@@ -67,74 +65,73 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!blobToken) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "BLOB_READ_WRITE_TOKEN is not configured.",
-        },
-        { status: 500 }
-      );
-    }
-
     console.log(
-      "1. RETRIEVING PRIVATE BLOB"
+      "1. STARTING PRIVATE BLOB READ"
     );
 
     /*
-     * Private Vercel Blob files require the
-     * Blob read/write token when retrieving them.
+     * IMPORTANT:
+     *
+     * The Blob store is PRIVATE.
+     *
+     * Therefore we CANNOT simply fetch(fileUrl).
+     *
+     * We use Vercel Blob's authenticated get()
+     * method on the SERVER.
      */
 
-    const fileResponse = await fetch(
+    const blobResult = await get(
       fileUrl,
       {
-        headers: {
-          Authorization: `Bearer ${blobToken}`,
-        },
-        cache: "no-store",
+        access: "private",
       }
     );
 
-    console.log(
-      "2. BLOB RESPONSE:",
-      fileResponse.status
-    );
-
-    if (!fileResponse.ok) {
-      const blobError =
-        await fileResponse.text();
-
-      console.error(
-        "BLOB RETRIEVAL ERROR:",
-        blobError
-      );
-
+    if (
+      !blobResult ||
+      blobResult.statusCode !== 200 ||
+      !blobResult.stream
+    ) {
       throw new Error(
-        `Unable to retrieve uploaded media. Status: ${fileResponse.status}`
+        "Unable to retrieve uploaded media from private Blob storage."
       );
     }
 
-    const arrayBuffer =
-      await fileResponse.arrayBuffer();
+    console.log(
+      "2. PRIVATE BLOB READ SUCCESS"
+    );
+
+    /*
+     * Convert the Blob stream into an ArrayBuffer.
+     */
+
+    const mediaArrayBuffer =
+      await new Response(
+        blobResult.stream
+      ).arrayBuffer();
 
     console.log(
-      "3. BLOB RETRIEVED:",
-      arrayBuffer.byteLength,
+      "3. MEDIA DOWNLOADED:",
+      mediaArrayBuffer.byteLength,
       "bytes"
     );
 
     const mediaBlob = new Blob(
-      [arrayBuffer],
+      [mediaArrayBuffer],
       {
         type:
           typeof fileType === "string" &&
           fileType
             ? fileType
-            : "application/octet-stream",
+            : blobResult.blob
+                .contentType ||
+              "application/octet-stream",
       }
     );
+
+    /*
+     * Prepare Groq Whisper request.
+     */
 
     const formData =
       new FormData();
@@ -143,6 +140,7 @@ export async function POST(request: Request) {
       "file",
       mediaBlob,
       fileName ||
+        blobResult.blob.pathname ||
         "uploaded-media"
     );
 
@@ -175,7 +173,7 @@ export async function POST(request: Request) {
     }
 
     console.log(
-      "4. SENDING TO GROQ"
+      "4. STARTING GROQ TRANSCRIPTION"
     );
 
     const groqResponse =
@@ -192,13 +190,13 @@ export async function POST(request: Request) {
         }
       );
 
-    console.log(
-      "5. GROQ RESPONSE:",
-      groqResponse.status
-    );
-
     const responseText =
       await groqResponse.text();
+
+    console.log(
+      "5. GROQ RESPONSE STATUS:",
+      groqResponse.status
+    );
 
     let data: any;
 
@@ -212,7 +210,7 @@ export async function POST(request: Request) {
       );
 
       throw new Error(
-        "Groq returned an unexpected response."
+        `Groq returned an invalid response. Status: ${groqResponse.status}`
       );
     }
 
@@ -233,16 +231,16 @@ export async function POST(request: Request) {
         data?.text || ""
       );
 
+    const segments =
+      Array.isArray(data?.segments)
+        ? data.segments
+        : [];
+
     if (!transcript) {
       throw new Error(
         "No speech was detected in the uploaded media."
       );
     }
-
-    const segments =
-      Array.isArray(data?.segments)
-        ? data.segments
-        : [];
 
     const subtitles =
       segments
@@ -279,6 +277,7 @@ export async function POST(request: Request) {
 
       result: {
         transcript,
+
         subtitles,
       },
     });
@@ -291,6 +290,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
+
         error:
           error instanceof Error
             ? error.message

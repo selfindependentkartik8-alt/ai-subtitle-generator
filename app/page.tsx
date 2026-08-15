@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { upload } from "@vercel/blob/client";
 
 type SubtitleSegment = {
   start: number;
@@ -19,6 +20,7 @@ export default function Home() {
   const [language, setLanguage] = useState("English");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
 
@@ -35,58 +37,67 @@ export default function Home() {
 
     setLoading(true);
     setUploading(true);
+    setUploadProgress(0);
     setResult(null);
     setError("");
 
     try {
-      console.log("1. STARTING UPLOAD");
+      console.log("1. STARTING DIRECT BLOB UPLOAD");
       console.log("FILE:", file.name, file.size, file.type);
 
-      const formData = new FormData();
-      formData.append("file", file);
+      /*
+       * IMPORTANT:
+       * The browser uploads the media directly to
+       * the private Vercel Blob store.
+       *
+       * The actual media file does NOT pass through
+       * /api/upload, so the Vercel 4.5 MB Function
+       * payload limit does not apply to the upload.
+       */
 
-      const uploadResponse = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      const blob = await upload(
+        `uploads/${Date.now()}-${file.name}`,
+        file,
+        {
+          access: "private",
 
-      console.log(
-        "2. UPLOAD RESPONSE:",
-        uploadResponse.status
+          handleUploadUrl: "/api/upload",
+
+          onUploadProgress: (progress) => {
+            console.log(
+              "UPLOAD:",
+              progress.percentage + "%"
+            );
+
+            setUploadProgress(
+              Math.round(progress.percentage)
+            );
+          },
+        }
       );
 
-      const uploadData = await uploadResponse.json();
+      console.log("2. BLOB UPLOAD SUCCESS");
+      console.log("BLOB URL:", blob.url);
 
-      console.log("3. UPLOAD DATA:", uploadData);
-
-      if (!uploadResponse.ok) {
+      if (!blob?.url) {
         throw new Error(
-          uploadData?.error || "Media upload failed."
+          "Upload completed but no Blob URL was returned."
         );
       }
-
-      if (!uploadData?.url) {
-        throw new Error(
-          "Upload succeeded but no Blob URL was returned."
-        );
-      }
-
-      const fileUrl = uploadData.url;
-
-      console.log("4. BLOB UPLOAD SUCCESS");
-      console.log("BLOB URL:", fileUrl);
 
       setUploading(false);
 
-      console.log("5. STARTING GENERATION");
+      console.log("3. STARTING GENERATE REQUEST");
 
-      const generateResponse = await fetch("/api/generate", {
+      const response = await fetch("/api/generate", {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
-          fileUrl,
+          fileUrl: blob.url,
           fileName: file.name,
           fileType: file.type,
           language,
@@ -94,45 +105,53 @@ export default function Home() {
       });
 
       console.log(
-        "6. GENERATE RESPONSE:",
-        generateResponse.status
+        "4. GENERATE RESPONSE STATUS:",
+        response.status
       );
 
-      const generateData = await generateResponse.json();
+      const responseText = await response.text();
 
       console.log(
-        "7. GENERATE DATA:",
-        generateData
+        "5. GENERATE RAW RESPONSE:",
+        responseText
       );
 
-      if (!generateResponse.ok) {
+      let data: any;
+
+      try {
+        data = JSON.parse(responseText);
+      } catch {
         throw new Error(
-          generateData?.error ||
+          "Generate API returned an invalid response."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
             "Something went wrong while generating subtitles."
         );
       }
 
-      if (!generateData?.result) {
+      if (!data?.result) {
         throw new Error(
           "AI returned an empty result."
         );
       }
 
-      setResult({
-        transcript:
-          generateData.result.transcript || "",
-
-        subtitles:
-          Array.isArray(
-            generateData.result.subtitles
-          )
-            ? generateData.result.subtitles
-            : [],
-      });
-
       console.log(
-        "8. SUBTITLE GENERATION SUCCESS"
+        "6. SUBTITLE GENERATION SUCCESS"
       );
+
+      setResult({
+        transcript: data.result.transcript || "",
+
+        subtitles: Array.isArray(
+          data.result.subtitles
+        )
+          ? data.result.subtitles
+          : [],
+      });
     } catch (err) {
       console.error(
         "SUBTITLE ERROR:",
@@ -147,6 +166,7 @@ export default function Home() {
     } finally {
       setUploading(false);
       setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -230,11 +250,12 @@ export default function Home() {
     return result.subtitles
       .map(
         (subtitle, index) =>
-          `${index + 1}\n${formatTime(
-            subtitle.start
-          )} --> ${formatTime(
+          `${index + 1}
+${formatTime(subtitle.start)} --> ${formatTime(
             subtitle.end
-          )}\n${subtitle.text}\n`
+          )}
+${subtitle.text}
+`
       )
       .join("\n");
   };
@@ -251,7 +272,9 @@ export default function Home() {
             subtitle.start
           )} --> ${formatVTTTime(
             subtitle.end
-          )}\n${subtitle.text}\n`
+          )}
+${subtitle.text}
+`
       )
       .join("\n");
 
@@ -263,7 +286,9 @@ export default function Home() {
     filename: string,
     type: string
   ) => {
-    if (!content) return;
+    if (!content) {
+      return;
+    }
 
     const blob = new Blob(
       [content],
@@ -289,7 +314,9 @@ export default function Home() {
   };
 
   const copyTranscript = async () => {
-    if (!result?.transcript) return;
+    if (!result?.transcript) {
+      return;
+    }
 
     try {
       await navigator.clipboard.writeText(
@@ -307,17 +334,16 @@ export default function Home() {
       return;
     }
 
-    const text =
-      result.subtitles
-        .map(
-          (subtitle, index) =>
-            `${index + 1}. ${formatTime(
-              subtitle.start
-            )} → ${formatTime(
-              subtitle.end
-            )}\n${subtitle.text}`
-        )
-        .join("\n\n");
+    const text = result.subtitles
+      .map(
+        (subtitle, index) =>
+          `${index + 1}. ${formatTime(
+            subtitle.start
+          )} → ${formatTime(
+            subtitle.end
+          )}\n${subtitle.text}`
+      )
+      .join("\n\n");
 
     try {
       await navigator.clipboard.writeText(
@@ -333,11 +359,15 @@ export default function Home() {
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-[#18072b] via-[#0b0612] to-black text-white">
 
+      {/* Background */}
+
       <div className="pointer-events-none absolute left-1/2 top-[-220px] h-[600px] w-[800px] max-w-[100vw] -translate-x-1/2 rounded-full bg-purple-600/20 blur-[150px]" />
 
       <div className="pointer-events-none absolute left-[-180px] top-[45%] h-[350px] w-[350px] rounded-full bg-fuchsia-600/10 blur-[140px]" />
 
       <div className="pointer-events-none absolute right-[-180px] top-[60%] h-[350px] w-[350px] rounded-full bg-violet-500/10 blur-[140px]" />
+
+      {/* Navbar */}
 
       <nav className="relative z-20 mx-4 mt-5 rounded-3xl border border-purple-400/10 bg-zinc-950/75 px-4 py-4 shadow-2xl shadow-purple-950/30 backdrop-blur-2xl sm:mx-auto sm:max-w-6xl sm:px-6">
 
@@ -422,6 +452,8 @@ export default function Home() {
 
       </nav>
 
+      {/* Mobile Menu */}
+
       {menuOpen && (
         <div className="relative z-30 mx-4 mt-2 rounded-3xl border border-purple-400/10 bg-zinc-950/95 p-4 backdrop-blur-xl md:hidden">
 
@@ -432,18 +464,20 @@ export default function Home() {
               ["#features", "Features"],
               ["#how", "How To Use"],
               ["#faq", "FAQ"],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                href={href}
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-                className="rounded-2xl px-4 py-3 text-sm text-zinc-300 hover:bg-purple-400/10 hover:text-purple-300"
-              >
-                {label}
-              </a>
-            ))}
+            ].map(
+              ([href, label]) => (
+                <a
+                  key={href}
+                  href={href}
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                  className="rounded-2xl px-4 py-3 text-sm text-zinc-300 hover:bg-purple-400/10 hover:text-purple-300"
+                >
+                  {label}
+                </a>
+              )
+            )}
 
             <a
               href="https://www.instagram.com/krishaiworks/"
@@ -458,6 +492,8 @@ export default function Home() {
 
         </div>
       )}
+
+      {/* Hero */}
 
       <section
         id="home"
@@ -478,13 +514,16 @@ export default function Home() {
         <h1 className="mt-7 max-w-4xl text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
           Turn Your Videos Into
           <br />
+
           <span className="bg-gradient-to-r from-purple-300 via-fuchsia-400 to-violet-400 bg-clip-text text-transparent">
             Accurate Subtitles.
           </span>
+
         </h1>
 
         <p className="mt-6 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base sm:leading-8">
-          Upload your video or audio and let AI transcribe the speech into timestamped subtitles ready for your content.
+          Upload your video or audio and let AI transcribe the speech
+          into timestamped subtitles ready for your content.
         </p>
 
         <div className="mt-7 flex max-w-full flex-wrap justify-center gap-3">
@@ -503,6 +542,8 @@ export default function Home() {
 
         </div>
 
+        {/* Generator */}
+
         <div className="mt-12 w-full max-w-4xl">
 
           <div className="rounded-[2rem] border border-purple-400/10 bg-zinc-950/60 p-4 text-left shadow-2xl shadow-purple-950/30 backdrop-blur-2xl sm:p-7">
@@ -520,6 +561,8 @@ export default function Home() {
             </p>
 
             <div className="mt-7 space-y-5">
+
+              {/* Upload */}
 
               <div>
 
@@ -548,7 +591,6 @@ export default function Home() {
                     accept="video/*,audio/*"
                     className="hidden"
                     onChange={(e) => {
-
                       const selected =
                         e.target.files?.[0] ||
                         null;
@@ -571,13 +613,14 @@ export default function Home() {
                       setError("");
                       setFile(selected);
                       setResult(null);
-
                     }}
                   />
 
                 </label>
 
               </div>
+
+              {/* Language */}
 
               <div>
 
@@ -594,16 +637,70 @@ export default function Home() {
                   }
                   className="box-border h-14 w-full rounded-2xl border border-white/10 bg-black/40 px-4 text-sm text-white outline-none focus:border-purple-400/50"
                 >
-                  <option>English</option>
-                  <option>Hindi</option>
-                  <option>Spanish</option>
-                  <option>French</option>
-                  <option>German</option>
-                  <option>Urdu</option>
-                  <option>Auto Detect</option>
+                  <option>
+                    English
+                  </option>
+
+                  <option>
+                    Hindi
+                  </option>
+
+                  <option>
+                    Spanish
+                  </option>
+
+                  <option>
+                    French
+                  </option>
+
+                  <option>
+                    German
+                  </option>
+
+                  <option>
+                    Urdu
+                  </option>
+
+                  <option>
+                    Auto Detect
+                  </option>
+
                 </select>
 
               </div>
+
+              {/* Upload Progress */}
+
+              {uploading && (
+                <div className="rounded-2xl border border-purple-400/10 bg-purple-400/[0.04] p-4">
+
+                  <div className="flex items-center justify-between text-xs">
+
+                    <span className="text-purple-300">
+                      ☁️ Uploading media...
+                    </span>
+
+                    <span className="text-zinc-500">
+                      {uploadProgress}%
+                    </span>
+
+                  </div>
+
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
+
+                    <div
+                      className="h-full rounded-full bg-purple-400 transition-all duration-300"
+                      style={{
+                        width: `${uploadProgress}%`,
+                      }}
+                    />
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* Generate */}
 
               <button
                 type="button"
@@ -611,20 +708,26 @@ export default function Home() {
                 disabled={loading}
                 className="h-14 w-full rounded-2xl bg-purple-400 px-5 text-sm font-semibold text-black shadow-xl shadow-purple-400/20 transition hover:bg-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
+
                 {uploading
-                  ? "☁️ Uploading Media..."
+                  ? `☁️ Uploading ${uploadProgress}%...`
                   : loading
                   ? "🧠 Generating Subtitles..."
                   : "✨ Generate Subtitles"}
+
               </button>
 
             </div>
+
+            {/* Error */}
 
             {error && (
               <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
                 ⚠️ {error}
               </div>
             )}
+
+            {/* Result */}
 
             {result && (
               <div className="mt-8 rounded-3xl border border-purple-400/10 bg-black/40 p-5 sm:p-7">
@@ -677,6 +780,8 @@ export default function Home() {
 
                 </div>
 
+                {/* Transcript */}
+
                 <div className="mt-8">
 
                   <div className="flex items-center justify-between gap-3">
@@ -687,7 +792,9 @@ export default function Home() {
 
                     <button
                       type="button"
-                      onClick={copyTranscript}
+                      onClick={
+                        copyTranscript
+                      }
                       className="text-xs text-purple-400"
                     >
                       📋 Copy
@@ -702,6 +809,8 @@ export default function Home() {
 
                 </div>
 
+                {/* Subtitles */}
+
                 <div className="mt-8">
 
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -712,7 +821,9 @@ export default function Home() {
 
                     <button
                       type="button"
-                      onClick={copySubtitles}
+                      onClick={
+                        copySubtitles
+                      }
                       className="text-xs text-purple-400"
                     >
                       📋 Copy
@@ -735,6 +846,7 @@ export default function Home() {
                           >
 
                             <div className="text-[11px] font-semibold text-purple-400">
+
                               {formatTime(
                                 subtitle.start
                               )}{" "}
@@ -742,6 +854,7 @@ export default function Home() {
                               {formatTime(
                                 subtitle.end
                               )}
+
                             </div>
 
                             <p className="mt-2 text-sm leading-7 text-zinc-300">
@@ -774,6 +887,8 @@ export default function Home() {
 
       </section>
 
+      {/* Features */}
+
       <section
         id="features"
         className="relative z-10 mx-auto max-w-6xl px-4 py-20 sm:px-8"
@@ -787,11 +902,13 @@ export default function Home() {
               "AI Transcription",
               "Convert spoken audio into clean text using AI.",
             ],
+
             [
               "⏱️",
               "Accurate Timestamps",
               "Get subtitle segments synchronized with your media.",
             ],
+
             [
               "📄",
               "SRT & VTT",
@@ -828,6 +945,8 @@ export default function Home() {
 
       </section>
 
+      {/* How To Use */}
+
       <section
         id="how"
         className="relative z-10 mx-auto max-w-6xl px-4 py-20 sm:px-8"
@@ -853,11 +972,13 @@ export default function Home() {
               "Upload",
               "Choose your video or audio file.",
             ],
+
             [
               "02",
               "Generate",
               "AI transcribes the spoken content and creates timestamps.",
             ],
+
             [
               "03",
               "Download",
@@ -894,6 +1015,8 @@ export default function Home() {
 
       </section>
 
+      {/* FAQ */}
+
       <section
         id="faq"
         className="relative z-10 mx-auto max-w-4xl px-4 py-20 sm:px-8"
@@ -918,14 +1041,17 @@ export default function Home() {
               "What files can I upload?",
               "You can upload common video and audio formats such as MP4, MOV, WebM, MP3 and WAV.",
             ],
+
             [
               "What is the maximum file size?",
               "The current generator accepts files up to 25 MB.",
             ],
+
             [
               "Can I generate Hindi subtitles?",
               "Yes. Select Hindi as the spoken language before generating subtitles.",
             ],
+
             [
               "Can I download the subtitles?",
               "Yes. You can download generated subtitles as SRT or VTT files.",
@@ -956,6 +1082,8 @@ export default function Home() {
 
       </section>
 
+      {/* Footer */}
+
       <footer className="relative z-10 border-t border-white/5 px-4 py-10">
 
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 text-center sm:flex-row sm:text-left">
@@ -963,11 +1091,13 @@ export default function Home() {
           <div className="flex items-center gap-3">
 
             <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-purple-400/20">
+
               <img
                 src="/logo.png"
                 alt="KrishAIWorks"
                 className="h-full w-full rounded-full object-cover"
               />
+
             </div>
 
             <div>
