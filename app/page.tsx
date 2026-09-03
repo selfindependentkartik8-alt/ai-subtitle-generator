@@ -1081,46 +1081,138 @@ ${subtitle.text}
         </div>
 
       </section>
+{/* ================================================= */}
+{/* FOOTER */}
+{/* ================================================= */}
 
-      {/* Footer */}
+<footer className="relative z-10 border-t border-white/5 px-4 py-10">
+  <div className="mx-auto max-w-6xl">
 
-      <footer className="relative z-10 border-t border-white/5 px-4 py-10">
+    {/* Related Tools */}
+    <div className="mb-10 text-center">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-purple-300">
+        Explore More
+      </p>
 
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 text-center sm:flex-row sm:text-left">
+      <h3 className="mt-2 text-xl font-bold text-white">
+        More AI & Video Tools
+      </h3>
 
-          <div className="flex items-center gap-3">
+      <p className="mx-auto mt-2 max-w-xl text-sm text-zinc-500">
+        Explore more powerful AI tools from KrishAIWorks to create,
+        summarize, and optimize your content.
+      </p>
+    </div>
 
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-purple-400/20">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-              <img
-                src="/logo.png"
-                alt="KrishAIWorks"
-                className="h-full w-full rounded-full object-cover"
-              />
-
-            </div>
-
-            <div>
-
-              <p className="text-sm font-bold">
-                KrishAIWorks
-              </p>
-
-              <p className="text-xs text-zinc-600">
-                AI Solutions That Work
-              </p>
-
-            </div>
-
-          </div>
-
-          <p className="text-xs text-zinc-600">
-            © {new Date().getFullYear()} KrishAIWorks. All rights reserved.
-          </p>
-
+      {/* YouTube AI Summarizer */}
+      <a
+        href="https://youtubeaisummarizer.krishaiworks.com/"
+        className="group rounded-2xl border border-purple-400/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-purple-400/30 hover:bg-purple-400/[0.05]"
+      >
+        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/20 bg-purple-400/10 text-lg">
+          ▶️
         </div>
 
-      </footer>
+        <h4 className="font-semibold text-white transition-colors group-hover:text-purple-300">
+          YouTube AI Summarizer
+        </h4>
+
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Turn long YouTube videos into quick, useful summaries.
+        </p>
+      </a>
+
+      {/* AI YouTube Title & Description Generator */}
+      <a
+        href="https://aiyoutubetitledescriptiongenerator.krishaiworks.com/"
+        className="group rounded-2xl border border-purple-400/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-purple-400/30 hover:bg-purple-400/[0.05]"
+      >
+        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/20 bg-purple-400/10 text-lg">
+          🎬
+        </div>
+
+        <h4 className="font-semibold text-white transition-colors group-hover:text-purple-300">
+          YouTube Title & Description
+        </h4>
+
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Generate engaging titles and descriptions for your videos.
+        </p>
+      </a>
+
+      {/* AI Blog Generator */}
+      <a
+        href="https://aibloggenerator.krishaiworks.com/"
+        className="group rounded-2xl border border-purple-400/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-purple-400/30 hover:bg-purple-400/[0.05]"
+      >
+        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/20 bg-purple-400/10 text-lg">
+          ✍️
+        </div>
+
+        <h4 className="font-semibold text-white transition-colors group-hover:text-purple-300">
+          AI Blog Generator
+        </h4>
+
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Create high-quality blog content with the power of AI.
+        </p>
+      </a>
+
+      {/* AI Text Humanizer */}
+      <a
+        href="https://aitexthumanizer.krishaiworks.com/"
+        className="group rounded-2xl border border-purple-400/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-purple-400/30 hover:bg-purple-400/[0.05]"
+      >
+        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-purple-400/20 bg-purple-400/10 text-lg">
+          📝
+        </div>
+
+        <h4 className="font-semibold text-white transition-colors group-hover:text-purple-300">
+          AI Text Humanizer
+        </h4>
+
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Make AI-generated content sound more natural and human.
+        </p>
+      </a>
+
+    </div>
+
+    {/* Main Footer */}
+    <div className="mt-10 flex flex-col items-center justify-between gap-5 border-t border-white/5 pt-8 text-center sm:flex-row sm:text-left">
+
+      <div className="flex items-center gap-3">
+
+        <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-purple-400/20">
+          <img
+            src="/logo.png"
+            alt="KrishAIWorks"
+            className="h-full w-full rounded-full object-cover"
+          />
+        </div>
+
+        <div>
+          <p className="text-sm font-bold text-white">
+            KrishAIWorks
+          </p>
+
+          <p className="text-xs text-zinc-600">
+            AI Solutions That Work
+          </p>
+        </div>
+
+      </div>
+
+      <p className="text-xs text-zinc-600">
+        © {new Date().getFullYear()} KrishAIWorks. All rights reserved.
+      </p>
+
+    </div>
+
+  </div>
+</footer>
 
     </main>
   );
